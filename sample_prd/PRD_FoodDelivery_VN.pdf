@@ -1,0 +1,55 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /MediaBox [0 0 612 792] /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 1950 >>
+stream
+BT /F1 18 Tf 50 740 Td (PRD: Food Delivery App - Vietnam Market (v1.2)) Tj ET
+BT /F1 11 Tf 50 700 Td (SECTION 1: BUYER ORDER PLACEMENT \(VN SCOPE\)) Tj ET
+BT /F1 11 Tf 50 680 Td (Requirement 1.1: Cash on Delivery \(COD\) and E-Wallet Payment) Tj ET
+BT /F1 11 Tf 50 660 Td (Buyer in Vietnam can select COD, MoMo, or ZaloPay at checkout.) Tj ET
+BT /F1 11 Tf 50 640 Td (Expected Result: Order created successfully with status PENDING_MERCHANT.) Tj ET
+BT /F1 11 Tf 50 620 Td (Evidence: Screenshot of Order Summary UI and API response payload from /orders/create.) Tj ET
+BT /F1 11 Tf 50 600 Td () Tj ET
+BT /F1 11 Tf 50 580 Td (Requirement 1.2: Free Shipping Coupon VN) Tj ET
+BT /F1 11 Tf 50 560 Td (Applying FREESHIP_VN code must discount shipping fee to 0 VND.) Tj ET
+BT /F1 11 Tf 50 540 Td (Expected Result: Shipping fee shows 0 VND in order summary before payment.) Tj ET
+BT /F1 11 Tf 50 520 Td (Evidence: Screenshot of payment screen showing 0 VND shipping fee line item.) Tj ET
+BT /F1 11 Tf 50 500 Td () Tj ET
+BT /F1 11 Tf 50 480 Td (SECTION 2: MERCHANT ORDER MANAGEMENT) Tj ET
+BT /F1 11 Tf 50 460 Td (Requirement 2.1: Accept Order Notification) Tj ET
+BT /F1 11 Tf 50 440 Td (Merchant receives push notification when new order arrives and clicks Accept.) Tj ET
+BT /F1 11 Tf 50 420 Td (Expected Result: Status changes to PREPARING and driver search is triggered.) Tj ET
+BT /F1 11 Tf 50 400 Td (Evidence: Screen recording of Merchant app receiving notification and clicking Accept.) Tj ET
+BT /F1 11 Tf 50 380 Td () Tj ET
+BT /F1 11 Tf 50 360 Td (SECTION 3: DRIVER PICKUP & DELIVERY) Tj ET
+BT /F1 11 Tf 50 340 Td (Requirement 3.1: GPS Location Update) Tj ET
+BT /F1 11 Tf 50 320 Td (Driver location updates on Buyer tracking map every 5 seconds.) Tj ET
+BT /F1 11 Tf 50 300 Td (Expected Result: Buyer map shows driver icon moving along route in real-time.) Tj ET
+BT /F1 11 Tf 50 280 Td (Evidence: Screen recording of Buyer live map tracking screen.) Tj ET
+
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000311 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+2313
+%%EOF
