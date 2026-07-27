@@ -12,30 +12,37 @@ interface DbSchema {
   test_results: TestResult[];
 }
 
+// In-memory cache for serverless execution
+let memoryStore: DbSchema = { prds: [], test_cases: [], test_results: [] };
+
 function ensureStoreExists(): DbSchema {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(STORE_FILE)) {
-    const initial: DbSchema = { prds: [], test_cases: [], test_results: [] };
-    fs.writeFileSync(STORE_FILE, JSON.stringify(initial, null, 2), 'utf-8');
-    return initial;
-  }
   try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (!fs.existsSync(STORE_FILE)) {
+      fs.writeFileSync(STORE_FILE, JSON.stringify(memoryStore, null, 2), 'utf-8');
+      return memoryStore;
+    }
     const content = fs.readFileSync(STORE_FILE, 'utf-8');
-    return JSON.parse(content) as DbSchema;
+    memoryStore = JSON.parse(content) as DbSchema;
+    return memoryStore;
   } catch (err) {
-    const initial: DbSchema = { prds: [], test_cases: [], test_results: [] };
-    fs.writeFileSync(STORE_FILE, JSON.stringify(initial, null, 2), 'utf-8');
-    return initial;
+    // Read-only filesystem on Vercel / serverless -> use in-memory store fallback
+    return memoryStore;
   }
 }
 
 function saveStore(data: DbSchema) {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  memoryStore = data;
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(STORE_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (err) {
+    // Ignore read-only filesystem errors on Vercel
   }
-  fs.writeFileSync(STORE_FILE, JSON.stringify(data, null, 2), 'utf-8');
 }
 
 export const db = {

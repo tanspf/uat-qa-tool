@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { TestResult, EvidenceType } from '@/lib/types';
+import { uploadFileToStorage } from '@/lib/supabaseStorage';
 import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
 
 const FASTAPI_URL = process.env.FASTAPI_URL || 'http://localhost:8000';
 
@@ -42,19 +41,17 @@ export async function POST(req: NextRequest) {
     const savedEvidenceUrls: string[] = [];
     const base64FilesForAi: { mime_type: string; data: string }[] = [];
 
-    const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-
     for (const f of evidenceFiles) {
       if (typeof f === 'object' && f.name) {
-        const fileId = crypto.randomUUID().slice(0, 8);
-        const fileName = `${fileId}_${f.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
         const buffer = Buffer.from(await f.arrayBuffer());
-        const filePath = path.join(uploadsDir, fileName);
-        fs.writeFileSync(filePath, buffer);
-        savedEvidenceUrls.push(`/uploads/${fileName}`);
+
+        // Upload evidence file to Supabase Storage (or Data URL fallback in-memory) - NO DISK WRITE (fs)
+        const publicUrl = await uploadFileToStorage(
+          buffer,
+          f.name,
+          f.type || 'application/octet-stream'
+        );
+        savedEvidenceUrls.push(publicUrl);
 
         if (f.type.startsWith('image/')) {
           const b64 = buffer.toString('base64');
@@ -108,7 +105,7 @@ export async function POST(req: NextRequest) {
         evidenceValidityScore = 0.0;
       } else {
         verdict = 'pass';
-        verdictReason = 'Tự động chấm thành công (Local Fallback Mode)';
+        verdictReason = 'Tự động chấm thành công (Serverless Fallback Mode)';
         evidenceValidityScore = 0.9;
       }
     }

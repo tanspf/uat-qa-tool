@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { PRD, TestCase } from '@/lib/types';
+import { uploadFileToStorage } from '@/lib/supabaseStorage';
 import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
 
 const FASTAPI_URL = process.env.FASTAPI_URL || 'http://localhost:8000';
 
@@ -25,17 +24,19 @@ export async function POST(req: NextRequest) {
     const prdId = crypto.randomUUID();
     let fileName = 'PRD_Document.pdf';
     let fileUrl = '';
+    let fileBuffer: Buffer | null = null;
 
     if (file) {
       fileName = file.name;
-      const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-      if (!fs.existsSync(uploadsDir)) {
-        fs.mkdirSync(uploadsDir, { recursive: true });
-      }
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const savedPath = path.join(uploadsDir, `${prdId}_${fileName}`);
-      fs.writeFileSync(savedPath, buffer);
-      fileUrl = `/uploads/${prdId}_${fileName}`;
+      const arrayBuffer = await file.arrayBuffer();
+      fileBuffer = Buffer.from(arrayBuffer);
+
+      // Upload file to Supabase Storage (or Data URL fallback in-memory) - NO DISK WRITE (fs)
+      fileUrl = await uploadFileToStorage(
+        fileBuffer,
+        fileName,
+        file.type || 'application/pdf'
+      );
     } else {
       fileName = 'PRD_Text_Input.txt';
       fileUrl = '#text';
@@ -52,8 +53,10 @@ export async function POST(req: NextRequest) {
     let testCasesData: any[] = [];
     try {
       const fastApiFormData = new FormData();
-      if (file) {
-        fastApiFormData.append('file', file, fileName);
+      if (file && fileBuffer) {
+        // Convert Buffer to Uint8Array for standard BlobPart compatibility
+        const blob = new Blob([new Uint8Array(fileBuffer)], { type: file.type || 'application/pdf' });
+        fastApiFormData.append('file', blob, fileName);
       }
       if (prdText) {
         fastApiFormData.append('prd_text', prdText);
@@ -68,7 +71,8 @@ export async function POST(req: NextRequest) {
         const json = await res.json();
         testCasesData = json.test_cases || [];
       } else {
-        console.error('FastAPI generate-test-cases returned status:', res.status);
+        const errText = await res.text();
+        console.error('FastAPI generate-test-cases returned status:', res.status, errText);
       }
     } catch (err) {
       console.error('Failed to communicate with FastAPI backend:', err);
