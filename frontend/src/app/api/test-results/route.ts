@@ -2,9 +2,22 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { TestResult, EvidenceType, FILE_CONSTRAINTS } from '@/lib/types';
 import { uploadFileToStorage } from '@/lib/supabaseStorage';
+import { cookies } from 'next/headers';
 import crypto from 'crypto';
 
 const FASTAPI_URL = process.env.FASTAPI_URL || 'http://localhost:8000';
+
+async function getSessionUser() {
+  try {
+    const cookieStore = await cookies();
+    const sessionCookie = cookieStore.get('uat_session');
+    if (!sessionCookie || !sessionCookie.value) return null;
+    const session = JSON.parse(sessionCookie.value);
+    return await db.getUserByEmail(session.email);
+  } catch {
+    return null;
+  }
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -20,11 +33,19 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getSessionUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Chưa đăng nhập' }, { status: 401 });
+    }
+
     const formData = await req.formData();
     const testCaseId = formData.get('test_case_id') as string;
     const actualResult = formData.get('actual_result') as string || '';
-    const testerName = (formData.get('tester_name') as string) || 'Tester UAT';
-    const testerId = (formData.get('tester_id') as string) || 'tester_default';
+    const testerName = user.name || (formData.get('tester_name') as string) || 'Tester UAT';
+    const testerId = user.id || (formData.get('tester_id') as string) || 'tester_default';
+    const submittedBy = user.email;
+    const submittedAt = new Date().toISOString();
+
     const evidenceTypesSubmittedStr = formData.get('evidence_type_submitted') as string || '[]';
     let evidenceTypesSubmitted: EvidenceType[] = [];
 
@@ -135,26 +156,26 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const nowIso = new Date().toISOString();
-
     const newResult: TestResult = {
       id: crypto.randomUUID(),
       test_case_id: testCaseId,
       tester_id: testerId,
       tester_name: testerName,
+      submitted_by: submittedBy,
+      submitted_at: submittedAt,
       actual_result: actualResult,
       evidence_urls: savedEvidenceUrls,
       evidence_type_submitted: evidenceTypesSubmitted,
       verdict: verdict as any,
       verdict_reason: verdictReason,
       evidence_validity_score: evidenceValidityScore,
-      reviewed_at: nowIso,
-      created_at: nowIso,
+      reviewed_at: submittedAt,
+      created_at: submittedAt,
     };
 
     await db.addTestResult(newResult);
 
-    console.log(`[AUDIT LOG] Test Result Submitted | Submitter: ${testerName} (${testerId}) | Time: ${nowIso} | Verdict: ${verdict}`);
+    console.log(`[AUDIT LOG] Test Result Submitted | Submitter: ${submittedBy} (${testerName}) | Timestamp: ${submittedAt} | Verdict: ${verdict}`);
 
     return NextResponse.json(newResult);
   } catch (err: any) {
@@ -162,3 +183,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err.message || 'Lỗi khi submit kết quả test' }, { status: 500 });
   }
 }
+

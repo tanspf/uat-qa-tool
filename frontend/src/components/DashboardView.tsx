@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { PRD, DashboardStats, TestCase } from '@/lib/types';
+import { PRD, DashboardStats, TestCase, User } from '@/lib/types';
+import { useAuth } from '@/lib/AuthContext';
 import { VerdictBadge } from './VerdictBadge';
 import { 
   CheckCircle2, 
@@ -12,24 +13,46 @@ import {
   BarChart3, 
   ShieldAlert, 
   FileCheck2,
-  TrendingUp
+  TrendingUp,
+  UserCheck,
+  Users,
+  Shield,
+  Check
 } from 'lucide-react';
 
 interface DashboardViewProps {
   prds: PRD[];
   selectedPrdId: string | null;
   onSelectPrd: (prdId: string) => void;
+  onPrdUpdated?: () => void;
 }
 
 export function DashboardView({
   prds,
   selectedPrdId,
   onSelectPrd,
+  onPrdUpdated,
 }: DashboardViewProps) {
+  const { user } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [issues, setIssues] = useState<TestCase[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [dbMode, setDbMode] = useState<string>('Dual Mode');
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [isAssigningPic, setIsAssigningPic] = useState(false);
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+
+  const activePrd = prds.find(p => p.id === selectedPrdId) || prds[0];
+
+  useEffect(() => {
+    // Fetch users for PM PIC assignment
+    fetch('/api/auth/users')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) setAllUsers(data);
+      })
+      .catch(err => console.error('Error loading users:', err));
+  }, []);
 
   useEffect(() => {
     if (!selectedPrdId) return;
@@ -58,21 +81,54 @@ export function DashboardView({
     return (
       <div className="flex flex-col items-center justify-center p-12 text-center bg-slate-900/50 rounded-2xl border border-slate-800">
         <FileCheck2 className="w-12 h-12 text-slate-600 mb-3" />
-        <h3 className="text-base font-semibold text-slate-300">Chưa Có Tài Liệu PRD Nào</h3>
+        <h3 className="text-base font-semibold text-slate-300">Chưa Có Tài Liệu PRD Nào Bỏ Ngỏ</h3>
         <p className="text-xs text-slate-500 max-w-sm mt-1">
-          Vui lòng nhấn &quot;Upload PRD Mới&quot; ở thanh điều hướng để bắt đầu sinh test case và xem báo cáo UAT.
+          {user?.role === 'pm'
+            ? 'Vui lòng nhấn "Upload PRD (PM)" ở thanh điều hướng để tạo Task và phân công PIC.'
+            : 'Bạn chưa được phân công Task UAT nào. Vui lòng liên hệ PM để nhận phân công Task.'}
         </p>
       </div>
     );
   }
 
-  const activePrd = prds.find(p => p.id === selectedPrdId) || prds[0];
+  const currentAssignedPics: string[] = activePrd?.assigned_pics || [];
+
+  const handleTogglePicAssignment = async (testerEmail: string) => {
+    if (!activePrd) return;
+    setIsAssigningPic(true);
+    setSaveSuccessMsg(null);
+
+    let updatedPics: string[];
+    if (currentAssignedPics.includes(testerEmail)) {
+      updatedPics = currentAssignedPics.filter(e => e !== testerEmail);
+    } else {
+      updatedPics = [...currentAssignedPics, testerEmail];
+    }
+
+    try {
+      const res = await fetch(`/api/prds/${activePrd.id}/assign-pic`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assigned_pics: updatedPics }),
+      });
+
+      if (res.ok) {
+        setSaveSuccessMsg('Đã cập nhật phân công PIC thành công!');
+        if (onPrdUpdated) onPrdUpdated();
+        setTimeout(() => setSaveSuccessMsg(null), 3000);
+      }
+    } catch (err) {
+      console.error('Error assigning PIC:', err);
+    } finally {
+      setIsAssigningPic(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
       
       {/* Header & PRD Task Dropdown Selector */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-900 border border-slate-800">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-900 border border-slate-800">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-bold text-slate-100">Báo Cáo Tiến Độ UAT — PM Dashboard</h2>
@@ -81,11 +137,11 @@ export function DashboardView({
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Tổng hợp thời gian thực tiến độ kiểm thử, tỷ lệ Pass/Fail và danh sách sự cố UAT.
+            Tổng hợp thời gian thực tiến độ kiểm thử, tỷ lệ Pass/Fail và quản lý phân công PIC cho Task.
           </p>
         </div>
 
-        {/* TASK / PRD SELECTOR DROPDOWN (Filters stats strictly per PRD) */}
+        {/* TASK / PRD SELECTOR DROPDOWN */}
         <div className="flex items-center gap-2">
           <label className="text-xs font-semibold text-slate-400 whitespace-nowrap">Chọn PRD Task:</label>
           <select
@@ -99,6 +155,72 @@ export function DashboardView({
               </option>
             ))}
           </select>
+        </div>
+      </div>
+
+      {/* PIC (Person In Charge) Assignment Panel */}
+      <div className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-2">
+            <Users className="w-4 h-4 text-indigo-400" />
+            <h3 className="text-sm font-bold text-slate-200">Phân Công Nhân Sự (Assign PIC / Tester per Task)</h3>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">
+              PRD: {activePrd?.file_name}
+            </span>
+          </div>
+
+          {saveSuccessMsg && (
+            <span className="text-xs text-emerald-400 font-medium animate-in fade-in">
+              ✓ {saveSuccessMsg}
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+          {allUsers.filter(u => u.role === 'tester').map(tester => {
+            const isAssigned = currentAssignedPics.includes(tester.email) || currentAssignedPics.includes(tester.id);
+
+            return (
+              <div
+                key={tester.id}
+                className={`p-3 rounded-xl border transition flex items-center justify-between ${
+                  isAssigned
+                    ? 'bg-indigo-950/30 border-indigo-500/50 text-slate-100'
+                    : 'bg-slate-950/60 border-slate-800/80 text-slate-400'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 truncate">
+                  <div className={`p-1.5 rounded-lg ${isAssigned ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-800 text-slate-500'}`}>
+                    <UserCheck className="w-4 h-4" />
+                  </div>
+                  <div className="truncate">
+                    <span className="text-xs font-bold block truncate">{tester.name}</span>
+                    <span className="text-[10px] font-mono text-slate-400 block truncate">{tester.email}</span>
+                  </div>
+                </div>
+
+                {user?.role === 'pm' ? (
+                  <button
+                    type="button"
+                    disabled={isAssigningPic}
+                    onClick={() => handleTogglePicAssignment(tester.email)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition flex items-center gap-1 ${
+                      isAssigned
+                        ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                    }`}
+                  >
+                    {isAssigned ? <Check className="w-3.5 h-3.5" /> : null}
+                    <span>{isAssigned ? 'Đã Gán' : '+ Phân Công'}</span>
+                  </button>
+                ) : (
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${isAssigned ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>
+                    {isAssigned ? 'Được phân công' : 'Chưa phân công'}
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -256,3 +378,4 @@ export function DashboardView({
 }
 
 export default DashboardView;
+

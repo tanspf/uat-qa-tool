@@ -2,13 +2,15 @@
 
 import React from 'react';
 import { PRD } from '@/lib/types';
-import { ShieldCheck, Plus, FileText, Sparkles, LayoutDashboard, CheckSquare } from 'lucide-react';
+import { useAuth } from '@/lib/AuthContext';
+import { ShieldCheck, Sparkles, LayoutDashboard, CheckSquare, LogOut, User as UserIcon, Shield, Database } from 'lucide-react';
 
 interface NavbarProps {
   prds: PRD[];
   selectedPrdId: string | null;
   onSelectPrd: (id: string) => void;
   onOpenUpload: () => void;
+  onOpenAuditLogs: () => void;
   activeTab: 'matrix' | 'dashboard';
   onChangeTab: (tab: 'matrix' | 'dashboard') => void;
 }
@@ -18,9 +20,12 @@ export const Navbar: React.FC<NavbarProps> = ({
   selectedPrdId,
   onSelectPrd,
   onOpenUpload,
+  onOpenAuditLogs,
   activeTab,
   onChangeTab,
 }) => {
+  const { user, logout } = useAuth();
+
   return (
     <header className="sticky top-0 z-40 border-b border-slate-800 glass-panel px-4 lg:px-8 py-3">
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
@@ -41,7 +46,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Navigation Controls */}
-        <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
+        <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end flex-wrap">
           {/* View Tab Selector */}
           <div className="flex p-1 bg-slate-900/80 border border-slate-800 rounded-lg">
             <button
@@ -70,7 +75,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* PRD Selector Dropdown */}
           {prds.length > 0 && (
-            <div className="relative min-w-[200px]">
+            <div className="relative min-w-[180px]">
               <select
                 value={selectedPrdId || ''}
                 onChange={(e) => onSelectPrd(e.target.value)}
@@ -78,26 +83,70 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 {prds.map((prd) => (
                   <option key={prd.id} value={prd.id}>
-                    📄 {prd.file_name} ({new Date(prd.created_at).toLocaleDateString()})
+                    📄 {prd.file_name}
                   </option>
                 ))}
               </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400 text-xs">
                 ▼
               </div>
             </div>
           )}
 
-          {/* Upload PRD Button */}
+          {/* Audit Logs Button (PM & Traceability) */}
           <button
-            onClick={onOpenUpload}
-            className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+            onClick={onOpenAuditLogs}
+            title="Xem Nhật Ký Audit Submissions"
+            className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs font-medium rounded-lg transition"
           >
-            <Sparkles className="w-3.5 h-3.5 text-indigo-200 animate-pulse" />
-            Upload PRD (PDF)
+            <Database className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="hidden sm:inline">Audit Records</span>
           </button>
+
+          {/* Upload PRD Button (Allowed for PM role) */}
+          {user?.role === 'pm' ? (
+            <button
+              onClick={onOpenUpload}
+              className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-indigo-200 animate-pulse" />
+              Upload PRD (PM)
+            </button>
+          ) : (
+            <button
+              disabled
+              title="Chỉ tài khoản PM mới có quyền Upload PRD"
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 border border-slate-800 text-slate-500 text-xs rounded-lg cursor-not-allowed opacity-60"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-slate-600" />
+              <span>Upload (PM Only)</span>
+            </button>
+          )}
+
+          {/* User Profile Badge & Logout */}
+          {user && (
+            <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl text-xs">
+              <div className={`p-1 rounded-md ${user.role === 'pm' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                {user.role === 'pm' ? <Shield className="w-3.5 h-3.5" /> : <UserIcon className="w-3.5 h-3.5" />}
+              </div>
+              <div className="flex flex-col leading-tight">
+                <span className="font-bold text-slate-200 truncate max-w-[120px]">{user.name}</span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {user.role === 'pm' ? '👑 PM / Admin' : '🧪 Tester / PIC'}
+                </span>
+              </div>
+              <button
+                onClick={logout}
+                title="Đăng xuất"
+                className="ml-1 p-1 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </header>
   );
 };
+

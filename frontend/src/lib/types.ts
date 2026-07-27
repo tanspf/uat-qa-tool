@@ -4,11 +4,24 @@ export type Priority = 'critical' | 'high' | 'medium' | 'low';
 
 export type Verdict = 'pass' | 'fail' | 'blocked' | 'pending_review';
 
+export type UserRole = 'pm' | 'tester';
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  password?: string;
+  created_at: string;
+}
+
 export interface PRD {
   id: string;
   file_name: string;
   file_url: string;
   uploaded_by?: string;
+  created_by?: string;
+  assigned_pics?: string[]; // Array of user emails assigned as PIC to this Task
   created_at: string;
 }
 
@@ -36,6 +49,8 @@ export interface TestResult {
   test_case_id: string;
   tester_id?: string;
   tester_name?: string;
+  submitted_by?: string; // User email / ID of submitter for audit traceability
+  submitted_at?: string; // Timestamp when test result was submitted
   actual_result: string;
   evidence_urls: string[];
   evidence_type_submitted: EvidenceType[];
@@ -86,3 +101,4 @@ export const FILE_CONSTRAINTS = {
     'text/plain', 'text/x-log', 'application/json', 'application/xml', 'text/xml'
   ]
 };
+

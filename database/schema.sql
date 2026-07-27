@@ -1,11 +1,31 @@
 -- UAT QA Tool Database Schema for Supabase / PostgreSQL
 
--- 1. Table for PRDs
+-- 0. Table for Users (Authentication & RBAC)
+create table if not exists users (
+  id uuid primary key default gen_random_uuid(),
+  email text unique not null,
+  password_hash text not null,
+  name text not null,
+  role text check (role in ('pm', 'tester')) not null default 'tester',
+  created_at timestamptz default now()
+);
+
+-- Seed default users
+insert into users (email, password_hash, name, role)
+values 
+  ('pm@company.com', 'password123', 'PM Admin Lead', 'pm'),
+  ('tester1@company.com', 'password123', 'Tester Alpha (Order Flow)', 'tester'),
+  ('tester2@company.com', 'password123', 'Tester Beta (Payment Flow)', 'tester')
+on conflict (email) do nothing;
+
+-- 1. Table for PRDs (Tasks)
 create table if not exists prds (
   id uuid primary key default gen_random_uuid(),
   file_name text not null,
   file_url text not null,
   uploaded_by text default 'PM/BA User',
+  created_by text,
+  assigned_pics text[] default '{}',
   created_at timestamptz default now()
 );
 
@@ -32,12 +52,17 @@ create table if not exists test_results (
   test_case_id uuid references test_cases(id) on delete cascade,
   tester_id text default 'tester_anonymous',
   tester_name text default 'UAT Tester',
+  submitted_by text,
+  submitted_at timestamptz default now(),
   actual_result text,
   evidence_urls text[],
   evidence_type_submitted text[],
   verdict text check (verdict in ('pass','fail','blocked','pending_review')),
   verdict_reason text,
   evidence_validity_score numeric,
+  human_override_verdict text,
+  human_override_reason text,
+  reviewed_by text,
   reviewed_at timestamptz,
   created_at timestamptz default now()
 );

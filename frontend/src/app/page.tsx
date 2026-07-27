@@ -2,21 +2,26 @@
 
 import React, { useState, useEffect } from 'react';
 import { PRD, TestCase } from '@/lib/types';
+import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { LoginScreen } from '@/components/LoginScreen';
 import { Navbar } from '@/components/Navbar';
 import { UploadPrdModal } from '@/components/UploadPrdModal';
 import { TestCaseTable } from '@/components/TestCaseTable';
 import { TestExecutionModal } from '@/components/TestExecutionModal';
 import { CaseDetailsModal } from '@/components/CaseDetailsModal';
 import { DashboardView } from '@/components/DashboardView';
-import { Sparkles, FileText, CheckCircle2, ShieldCheck, ArrowRight, Loader2 } from 'lucide-react';
+import { AuditLogsModal } from '@/components/AuditLogsModal';
+import { Sparkles, FileText, CheckCircle2, ShieldCheck, ArrowRight, Loader2, Lock } from 'lucide-react';
 
-export default function Home() {
+function AppContent() {
+  const { user, isLoading: isAuthLoading } = useAuth();
   const [prds, setPrds] = useState<PRD[]>([]);
   const [selectedPrdId, setSelectedPrdId] = useState<string | null>(null);
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [activeTab, setActiveTab] = useState<'matrix' | 'dashboard'>('matrix');
 
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [isAuditLogsOpen, setIsAuditLogsOpen] = useState(false);
   const [executingCase, setExecutingCase] = useState<TestCase | null>(null);
   const [detailCase, setDetailCase] = useState<TestCase | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -27,8 +32,11 @@ export default function Home() {
       if (res.ok) {
         const data: PRD[] = await res.json();
         setPrds(data);
-        if (data.length > 0 && !selectedPrdId) {
-          setSelectedPrdId(data[0].id);
+        if (data.length > 0) {
+          setSelectedPrdId(prev => (prev && data.some(p => p.id === prev) ? prev : data[0].id));
+        } else {
+          setSelectedPrdId(null);
+          setTestCases([]);
         }
       }
     } catch (err) {
@@ -52,20 +60,36 @@ export default function Home() {
   };
 
   useEffect(() => {
-    fetchPrds();
-  }, []);
+    if (user) {
+      fetchPrds();
+    }
+  }, [user]);
 
   useEffect(() => {
-    if (selectedPrdId) {
+    if (user && selectedPrdId) {
       fetchTestCases(selectedPrdId);
     }
-  }, [selectedPrdId]);
+  }, [selectedPrdId, user]);
 
   const handlePrdUploaded = (newPrdId: string) => {
     fetchPrds();
     setSelectedPrdId(newPrdId);
     fetchTestCases(newPrdId);
   };
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-100">
+        <Loader2 className="w-10 h-10 text-indigo-500 animate-spin mb-3" />
+        <p className="text-xs text-slate-400 font-mono">Đang kiểm tra phiên đăng nhập...</p>
+      </div>
+    );
+  }
+
+  // BLOCK ALL APP ACCESS IF NOT AUTHENTICATED
+  if (!user) {
+    return <LoginScreen />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
@@ -76,6 +100,7 @@ export default function Home() {
         selectedPrdId={selectedPrdId}
         onSelectPrd={setSelectedPrdId}
         onOpenUpload={() => setIsUploadOpen(true)}
+        onOpenAuditLogs={() => setIsAuditLogsOpen(true)}
         activeTab={activeTab}
         onChangeTab={setActiveTab}
       />
@@ -96,36 +121,49 @@ export default function Home() {
               </div>
 
               <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-100 tracking-tight leading-tight">
-                Tải Lên File PRD Để Tự Động Sinh Test Case UAT & Chấm Điểm AI
+                {user.role === 'pm'
+                  ? 'Tải Lên File PRD Để Tự Động Sinh Test Case UAT & Phân Công PIC'
+                  : 'Bạn Chưa Được Phân Công Task UAT Nào'}
               </h1>
 
               <p className="text-sm text-slate-400 leading-relaxed">
-                Hệ thống hỗ trợ PM/BA tải tài liệu PRD (file PDF hoặc nhập văn bản), tự động trích xuất các luồng nghiệp vụ thị trường Việt Nam, sinh Test Cases kèm loại bằng chứng bắt buộc và AI chấm điểm kết quả thực tế.
+                {user.role === 'pm'
+                  ? 'Hệ thống hỗ trợ PM/BA tải tài liệu PRD, tự động sinh Test Cases kèm loại bằng chứng bắt buộc và phân công Tester/PIC phụ trách.'
+                  : 'Vui lòng liên hệ với PM/Admin để nhận phân công Task UAT cho các tính năng bạn phụ trách.'}
               </p>
 
-              <div className="pt-2 flex justify-center">
-                <button
-                  onClick={() => setIsUploadOpen(true)}
-                  className="px-6 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-xl shadow-indigo-600/30 transition flex items-center gap-2 group"
-                >
-                  <FileText className="w-4 h-4" />
-                  <span>Upload Tài Liệu PRD Đầu Tiên</span>
-                  <ArrowRight className="w-4 h-4 text-indigo-200 group-hover:translate-x-1 transition" />
-                </button>
-              </div>
+              {user.role === 'pm' ? (
+                <div className="pt-2 flex justify-center">
+                  <button
+                    onClick={() => setIsUploadOpen(true)}
+                    className="px-6 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-xl shadow-indigo-600/30 transition flex items-center gap-2 group"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>Upload Tài Liệu PRD Đầu Tiên (PM)</span>
+                    <ArrowRight className="w-4 h-4 text-indigo-200 group-hover:translate-x-1 transition" />
+                  </button>
+                </div>
+              ) : (
+                <div className="pt-2 flex justify-center">
+                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-400">
+                    <Lock className="w-4 h-4 text-amber-400" />
+                    <span>Tài khoản Tester ({user.email}) chỉ xem các Task được phân công.</span>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-6 border-t border-slate-800/80 text-left text-xs text-slate-400">
                 <div className="flex items-start gap-2.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-                  <span>Tự động chỉ định loại bằng chứng (Screenshot, Video, Log, API Response)</span>
+                  <span>Xác thực danh tính (submitted_by) & thời điểm (submitted_at)</span>
                 </div>
                 <div className="flex items-start gap-2.5">
                   <ShieldCheck className="w-4 h-4 text-indigo-400 flex-shrink-0 mt-0.5" />
-                  <span>Ngắt sớm kiểm tra để tiết kiệm 100% chi phí LLM nếu thiếu bằng chứng</span>
+                  <span>Phân quyền chi tiết (PM Admin & Tester PIC) per Task</span>
                 </div>
                 <div className="flex items-start gap-2.5">
                   <Sparkles className="w-4 h-4 text-purple-400 flex-shrink-0 mt-0.5" />
-                  <span>AI Gemini 2.5 Vision thẩm định đa phương thức cho kết quả Pass/Fail/Blocked</span>
+                  <span>AI Gemini 2.5 Vision thẩm định Pass/Fail/Blocked</span>
                 </div>
               </div>
             </div>
@@ -162,6 +200,7 @@ export default function Home() {
                 prds={prds}
                 selectedPrdId={selectedPrdId}
                 onSelectPrd={setSelectedPrdId}
+                onPrdUpdated={fetchPrds}
               />
             )}
           </>
@@ -170,10 +209,17 @@ export default function Home() {
       </main>
 
       {/* Modals */}
-      <UploadPrdModal
-        isOpen={isUploadOpen}
-        onClose={() => setIsUploadOpen(false)}
-        onSuccess={handlePrdUploaded}
+      {user.role === 'pm' && (
+        <UploadPrdModal
+          isOpen={isUploadOpen}
+          onClose={() => setIsUploadOpen(false)}
+          onSuccess={handlePrdUploaded}
+        />
+      )}
+
+      <AuditLogsModal
+        isOpen={isAuditLogsOpen}
+        onClose={() => setIsAuditLogsOpen(false)}
       />
 
       {executingCase && (
@@ -201,3 +247,12 @@ export default function Home() {
     </div>
   );
 }
+
+export default function Home() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}
+

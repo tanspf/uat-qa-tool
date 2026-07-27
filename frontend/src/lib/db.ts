@@ -1,19 +1,48 @@
 import fs from 'fs';
 import path from 'path';
-import { PRD, TestCase, TestResult, DashboardStats } from './types';
+import { PRD, TestCase, TestResult, DashboardStats, User } from './types';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const STORE_FILE = path.join(DATA_DIR, 'db_store.json');
 
 interface DbSchema {
+  users: User[];
   prds: PRD[];
   test_cases: TestCase[];
   test_results: TestResult[];
 }
 
+// Pre-seeded default users
+const DEFAULT_USERS: User[] = [
+  {
+    id: 'usr_pm_admin',
+    email: 'pm@company.com',
+    password: 'password123',
+    name: 'PM Admin Lead',
+    role: 'pm',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'usr_tester_1',
+    email: 'tester1@company.com',
+    password: 'password123',
+    name: 'Tester Alpha (Order Flow)',
+    role: 'tester',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'usr_tester_2',
+    email: 'tester2@company.com',
+    password: 'password123',
+    name: 'Tester Beta (Payment Flow)',
+    role: 'tester',
+    created_at: new Date().toISOString(),
+  },
+];
+
 // In-memory cache for serverless execution
-let memoryStore: DbSchema = { prds: [], test_cases: [], test_results: [] };
+let memoryStore: DbSchema = { users: DEFAULT_USERS, prds: [], test_cases: [], test_results: [] };
 
 function ensureStoreExists(): DbSchema {
   try {
@@ -21,14 +50,21 @@ function ensureStoreExists(): DbSchema {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
     if (!fs.existsSync(STORE_FILE)) {
+      memoryStore.users = DEFAULT_USERS;
       fs.writeFileSync(STORE_FILE, JSON.stringify(memoryStore, null, 2), 'utf-8');
       return memoryStore;
     }
     const content = fs.readFileSync(STORE_FILE, 'utf-8');
     memoryStore = JSON.parse(content) as DbSchema;
+    if (!memoryStore.users || memoryStore.users.length === 0) {
+      memoryStore.users = DEFAULT_USERS;
+    }
     return memoryStore;
   } catch (err) {
     // Read-only filesystem on Vercel / serverless -> use in-memory store fallback
+    if (!memoryStore.users || memoryStore.users.length === 0) {
+      memoryStore.users = DEFAULT_USERS;
+    }
     return memoryStore;
   }
 }
@@ -50,17 +86,55 @@ export const db = {
     return isSupabaseConfigured();
   },
 
-  // PRDs
-  async getAllPrds(): Promise<PRD[]> {
+  // USERS & AUTH
+  async getAllUsers(): Promise<User[]> {
+    if (isSupabaseConfigured() && supabase) {
+      const { data, error } = await supabase.from('users').select('*');
+      if (!error && data && data.length > 0) return data as User[];
+    }
+    const store = ensureStoreExists();
+    return store.users;
+  },
+
+  async getUserByEmail(email: string): Promise<User | null> {
+    const users = await this.getAllUsers();
+    return users.find(u => u.email.toLowerCase() === email.toLowerCase()) || null;
+  },
+
+  async getUserById(id: string): Promise<User | null> {
+    const users = await this.getAllUsers();
+    return users.find(u => u.id === id) || null;
+  },
+
+  // PRDs (Tasks) with RBAC filtering
+  async getAllPrds(user?: User | null): Promise<PRD[]> {
+    let allPrds: PRD[] = [];
+
     if (isSupabaseConfigured() && supabase) {
       const { data, error } = await supabase
         .from('prds')
         .select('*')
         .order('created_at', { ascending: false });
-      if (!error && data) return data as PRD[];
+      if (!error && data) allPrds = data as PRD[];
+    } else {
+      const store = ensureStoreExists();
+      allPrds = store.prds.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     }
-    const store = ensureStoreExists();
-    return store.prds.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    // Role-based access control filtering:
+    // PM role sees ALL Tasks (PRDs).
+    // Tester role sees ONLY Tasks assigned to them (or created by them).
+    if (!user || user.role === 'pm') {
+      return allPrds;
+    }
+
+    // Tester role filtering
+    return allPrds.filter(p => {
+      const assigned = p.assigned_pics || [];
+      const isAssigned = assigned.includes(user.email) || assigned.includes(user.id);
+      const isCreator = p.created_by === user.email || p.created_by === user.id;
+      return isAssigned || isCreator;
+    });
   },
 
   async getPrdById(id: string): Promise<PRD | null> {
@@ -77,6 +151,7 @@ export const db = {
   },
 
   async addPrd(prd: PRD): Promise<PRD> {
+    if (!prd.assigned_pics) prd.assigned_pics = [];
     if (isSupabaseConfigured() && supabase) {
       const { error } = await supabase.from('prds').insert([prd]);
       if (error) console.error('Supabase error inserting PRD:', error);
@@ -85,6 +160,24 @@ export const db = {
     store.prds.unshift(prd);
     saveStore(store);
     return prd;
+  },
+
+  async assignPicsToPrd(prdId: string, assignedPics: string[]): Promise<PRD | null> {
+    if (isSupabaseConfigured() && supabase) {
+      const { error } = await supabase
+        .from('prds')
+        .update({ assigned_pics: assignedPics })
+        .eq('id', prdId);
+      if (error) console.error('Supabase error updating assigned PICs:', error);
+    }
+    const store = ensureStoreExists();
+    const prd = store.prds.find(p => p.id === prdId);
+    if (prd) {
+      prd.assigned_pics = assignedPics;
+      saveStore(store);
+      return prd;
+    }
+    return null;
   },
 
   // Test Cases
@@ -179,8 +272,10 @@ export const db = {
     };
   },
 
-  // Test Results
+  // Test Results & Audit Log
   async addTestResult(result: TestResult): Promise<TestResult> {
+    if (!result.submitted_at) result.submitted_at = new Date().toISOString();
+    if (!result.submitted_by) result.submitted_by = result.tester_id || 'anonymous';
     if (isSupabaseConfigured() && supabase) {
       const { error } = await supabase.from('test_results').insert([result]);
       if (error) console.error('Supabase error inserting test result:', error);
@@ -204,6 +299,32 @@ export const db = {
     return store.test_results
       .filter(r => r.test_case_id === testCaseId)
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  },
+
+  async getAuditLogs(): Promise<Array<TestResult & { test_case_no?: string; section?: string; prd_file_name?: string }>> {
+    const store = ensureStoreExists();
+    let allResults: TestResult[] = store.test_results;
+
+    if (isSupabaseConfigured() && supabase) {
+      const { data, error } = await supabase
+        .from('test_results')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!error && data) allResults = data as TestResult[];
+    }
+
+    const prdsMap = new Map((await this.getAllPrds()).map(p => [p.id, p.file_name]));
+    const casesMap = new Map((await this.getTestCases()).map(c => [c.id, c]));
+
+    return allResults.map(r => {
+      const tc = casesMap.get(r.test_case_id);
+      return {
+        ...r,
+        test_case_no: tc?.test_case_no || 'N/A',
+        section: tc?.section || 'N/A',
+        prd_file_name: tc ? prdsMap.get(tc.prd_id) || 'Unknown PRD' : 'Unknown PRD',
+      };
+    });
   },
 
   // Dashboard Aggregation
@@ -232,7 +353,7 @@ export const db = {
       if (!tc.latest_result) {
         untested++;
       } else {
-        const v = tc.latest_result.verdict;
+        const v = tc.latest_result.human_override_verdict || tc.latest_result.verdict;
         if (v === 'pass') pass++;
         else if (v === 'fail') fail++;
         else if (v === 'blocked') blocked++;
@@ -256,3 +377,4 @@ export const db = {
     };
   }
 };
+
