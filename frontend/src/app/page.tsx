@@ -11,6 +11,7 @@ import { TestExecutionModal } from '@/components/TestExecutionModal';
 import { CaseDetailsModal } from '@/components/CaseDetailsModal';
 import { DashboardView } from '@/components/DashboardView';
 import { AuditLogsModal } from '@/components/AuditLogsModal';
+import { GrantUserModal } from '@/components/GrantUserModal';
 import { Sparkles, FileText, CheckCircle2, ShieldCheck, ArrowRight, Loader2, Lock } from 'lucide-react';
 
 function AppContent() {
@@ -22,6 +23,7 @@ function AppContent() {
 
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isAuditLogsOpen, setIsAuditLogsOpen] = useState(false);
+  const [isGrantUserOpen, setIsGrantUserOpen] = useState(false);
   const [executingCase, setExecutingCase] = useState<TestCase | null>(null);
   const [detailCase, setDetailCase] = useState<TestCase | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -101,6 +103,7 @@ function AppContent() {
         onSelectPrd={setSelectedPrdId}
         onOpenUpload={() => setIsUploadOpen(true)}
         onOpenAuditLogs={() => setIsAuditLogsOpen(true)}
+        onOpenGrantUser={() => setIsGrantUserOpen(true)}
         activeTab={activeTab}
         onChangeTab={setActiveTab}
       />
@@ -214,6 +217,13 @@ function AppContent() {
           isOpen={isUploadOpen}
           onClose={() => setIsUploadOpen(false)}
           onSuccess={handlePrdUploaded}
+        />
+      )}
+
+      {user.role === 'pm' && (
+        <GrantUserModal
+          isOpen={isGrantUserOpen}
+          onClose={() => setIsGrantUserOpen(false)}
         />
       )}
 

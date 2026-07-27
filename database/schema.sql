@@ -10,12 +10,11 @@ create table if not exists users (
   created_at timestamptz default now()
 );
 
--- Seed default users
+-- Seed default foody.vn admin users
 insert into users (email, password_hash, name, role)
 values 
-  ('pm@company.com', 'password123', 'PM Admin Lead', 'pm'),
-  ('tester1@company.com', 'password123', 'Tester Alpha (Order Flow)', 'tester'),
-  ('tester2@company.com', 'password123', 'Tester Beta (Payment Flow)', 'tester')
+  ('huuutan.trinh@foody.vn', 'password123', 'Trịnh Hữu Tân (PM Lead)', 'pm'),
+  ('huutan.trinh@foody.vn', 'password123', 'Trịnh Hữu Tân (PM Lead)', 'pm')
 on conflict (email) do nothing;
 
 -- 1. Table for PRDs (Tasks)

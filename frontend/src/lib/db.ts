@@ -13,30 +13,22 @@ interface DbSchema {
   test_results: TestResult[];
 }
 
-// Pre-seeded default users
+// Pre-seeded default users (@foody.vn only)
 const DEFAULT_USERS: User[] = [
   {
-    id: 'usr_pm_admin',
-    email: 'pm@company.com',
+    id: 'usr_pm_super_1',
+    email: 'huuutan.trinh@foody.vn',
     password: 'password123',
-    name: 'PM Admin Lead',
+    name: 'Trịnh Hữu Tân (PM Lead)',
     role: 'pm',
     created_at: new Date().toISOString(),
   },
   {
-    id: 'usr_tester_1',
-    email: 'tester1@company.com',
+    id: 'usr_pm_super_2',
+    email: 'huutan.trinh@foody.vn',
     password: 'password123',
-    name: 'Tester Alpha (Order Flow)',
-    role: 'tester',
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'usr_tester_2',
-    email: 'tester2@company.com',
-    password: 'password123',
-    name: 'Tester Beta (Payment Flow)',
-    role: 'tester',
+    name: 'Trịnh Hữu Tân (PM Lead)',
+    role: 'pm',
     created_at: new Date().toISOString(),
   },
 ];
@@ -56,15 +48,23 @@ function ensureStoreExists(): DbSchema {
     }
     const content = fs.readFileSync(STORE_FILE, 'utf-8');
     memoryStore = JSON.parse(content) as DbSchema;
-    if (!memoryStore.users || memoryStore.users.length === 0) {
-      memoryStore.users = DEFAULT_USERS;
-    }
+    if (!memoryStore.users) memoryStore.users = [];
+    
+    // Ensure default foody.vn admin accounts are present
+    DEFAULT_USERS.forEach(defUser => {
+      if (!memoryStore.users.some(u => u.email.toLowerCase() === defUser.email.toLowerCase())) {
+        memoryStore.users.push(defUser);
+      }
+    });
+
     return memoryStore;
   } catch (err) {
-    // Read-only filesystem on Vercel / serverless -> use in-memory store fallback
-    if (!memoryStore.users || memoryStore.users.length === 0) {
-      memoryStore.users = DEFAULT_USERS;
-    }
+    if (!memoryStore.users) memoryStore.users = [];
+    DEFAULT_USERS.forEach(defUser => {
+      if (!memoryStore.users.some(u => u.email.toLowerCase() === defUser.email.toLowerCase())) {
+        memoryStore.users.push(defUser);
+      }
+    });
     return memoryStore;
   }
 }
@@ -104,6 +104,27 @@ export const db = {
   async getUserById(id: string): Promise<User | null> {
     const users = await this.getAllUsers();
     return users.find(u => u.id === id) || null;
+  },
+
+  async grantUser(user: User): Promise<User> {
+    const lowerEmail = user.email.toLowerCase().trim();
+    if (!lowerEmail.endsWith('@foody.vn')) {
+      throw new Error('Chỉ chấp nhận cấp quyền cho địa chỉ email doanh nghiệp thuộc tên miền @foody.vn');
+    }
+    user.email = lowerEmail;
+    if (isSupabaseConfigured() && supabase) {
+      const { error } = await supabase.from('users').upsert([user], { onConflict: 'email' });
+      if (error) console.error('Supabase error granting user:', error);
+    }
+    const store = ensureStoreExists();
+    const existingIndex = store.users.findIndex(u => u.email.toLowerCase() === lowerEmail);
+    if (existingIndex >= 0) {
+      store.users[existingIndex] = user;
+    } else {
+      store.users.push(user);
+    }
+    saveStore(store);
+    return user;
   },
 
   // PRDs (Tasks) with RBAC filtering

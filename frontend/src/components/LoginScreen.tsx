@@ -131,80 +131,22 @@ export const LoginScreen: React.FC = () => {
             </button>
           </form>
 
-          {/* Quick Demo Accounts Selection */}
-          <div className="pt-4 border-t border-slate-800 space-y-3">
-            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block text-center">
-              Tài Khoản Thử Nghiệm Nhanh (Demo Accounts):
-            </span>
-
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('pm@company.com')}
-                disabled={isSubmitting}
-                className="w-full p-2.5 rounded-xl bg-slate-950 border border-indigo-500/30 hover:border-indigo-500 hover:bg-indigo-500/10 text-left transition flex items-center justify-between group"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-400">
-                    <Shield className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <span className="text-xs font-bold text-white block">PM / Admin Account</span>
-                    <span className="text-[10px] text-slate-400 font-mono">pm@company.com (Quyền xem tất cả Tasks & Phân công)</span>
-                  </div>
-                </div>
-                <span className="text-[10px] font-semibold text-indigo-400 bg-indigo-500/20 px-2 py-0.5 rounded uppercase group-hover:bg-indigo-500 group-hover:text-white transition">
-                  Chọn
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('tester1@company.com')}
-                disabled={isSubmitting}
-                className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-emerald-500/50 hover:bg-emerald-500/10 text-left transition flex items-center justify-between group"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
-                    <UserCheck className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <span className="text-xs font-bold text-white block">Tester 1 Account</span>
-                    <span className="text-[10px] text-slate-400 font-mono">tester1@company.com (Chỉ xem Task được phân công)</span>
-                  </div>
-                </div>
-                <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded uppercase group-hover:bg-emerald-500 group-hover:text-white transition">
-                  Chọn
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('tester2@company.com')}
-                disabled={isSubmitting}
-                className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-purple-500/50 hover:bg-purple-500/10 text-left transition flex items-center justify-between group"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-400">
-                    <UserCheck className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <span className="text-xs font-bold text-white block">Tester 2 Account</span>
-                    <span className="text-[10px] text-slate-400 font-mono">tester2@company.com (Chỉ xem Task được phân công)</span>
-                  </div>
-                </div>
-                <span className="text-[10px] font-semibold text-purple-400 bg-purple-500/20 px-2 py-0.5 rounded uppercase group-hover:bg-purple-500 group-hover:text-white transition">
-                  Chọn
-                </span>
-              </button>
+          {/* Domain & Security Notice */}
+          <div className="pt-4 border-t border-slate-800 text-center space-y-2">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-[11px] font-medium">
+              <Shield className="w-3.5 h-3.5" />
+              <span>Chỉ chấp nhận email doanh nghiệp @foody.vn</span>
             </div>
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Tài khoản cần được PM Admin (<strong>huuutan.trinh@foody.vn</strong>) cấp quyền trước khi đăng nhập.
+            </p>
           </div>
 
         </div>
 
         {/* Footer info */}
         <p className="text-center text-[11px] text-slate-500">
-          UAT QA Tool Platform • Gemini AI Integrated
+          UAT QA Tool Platform • Security Enforced per @foody.vn Domain
         </p>
 
       </div>

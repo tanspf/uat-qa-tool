@@ -3,7 +3,7 @@
 import React from 'react';
 import { PRD } from '@/lib/types';
 import { useAuth } from '@/lib/AuthContext';
-import { ShieldCheck, Sparkles, LayoutDashboard, CheckSquare, LogOut, User as UserIcon, Shield, Database } from 'lucide-react';
+import { ShieldCheck, Sparkles, LayoutDashboard, CheckSquare, LogOut, User as UserIcon, Shield, Database, UserPlus } from 'lucide-react';
 
 interface NavbarProps {
   prds: PRD[];
@@ -11,6 +11,7 @@ interface NavbarProps {
   onSelectPrd: (id: string) => void;
   onOpenUpload: () => void;
   onOpenAuditLogs: () => void;
+  onOpenGrantUser?: () => void;
   activeTab: 'matrix' | 'dashboard';
   onChangeTab: (tab: 'matrix' | 'dashboard') => void;
 }
@@ -21,6 +22,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectPrd,
   onOpenUpload,
   onOpenAuditLogs,
+  onOpenGrantUser,
   activeTab,
   onChangeTab,
 }) => {
@@ -102,6 +104,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Database className="w-3.5 h-3.5 text-indigo-400" />
             <span className="hidden sm:inline">Audit Records</span>
           </button>
+
+          {/* Grant User Button for PM Admin */}
+          {user?.role === 'pm' && onOpenGrantUser && (
+            <button
+              onClick={onOpenGrantUser}
+              title="Cấp Quyền Tài Khoản @foody.vn"
+              className="flex items-center gap-1.5 px-3 py-2 bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-800/80 text-emerald-300 text-xs font-medium rounded-lg transition"
+            >
+              <UserPlus className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Cấp Quyền @foody.vn</span>
+            </button>
+          )}
 
           {/* Upload PRD Button (Allowed for PM role) */}
           {user?.role === 'pm' ? (

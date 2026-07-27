@@ -10,10 +10,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Email và mật khẩu không được để trống' }, { status: 400 });
     }
 
-    const user = await db.getUserByEmail(email);
+    const trimmedEmail = String(email).trim().toLowerCase();
+    if (!trimmedEmail.endsWith('@foody.vn')) {
+      return NextResponse.json({
+        error: 'Hệ thống chỉ chấp nhận tài khoản email doanh nghiệp thuộc tên miền @foody.vn'
+      }, { status: 400 });
+    }
 
-    if (!user || user.password !== password) {
-      return NextResponse.json({ error: 'Email hoặc mật khẩu không chính xác' }, { status: 401 });
+    const user = await db.getUserByEmail(trimmedEmail);
+
+    if (!user) {
+      return NextResponse.json({
+        error: 'Tài khoản chưa được cấp quyền truy cập. Vui lòng liên hệ Admin (huuutan.trinh@foody.vn) để được cấp quyền.'
+      }, { status: 403 });
+    }
+
+    if (user.password !== password) {
+      return NextResponse.json({ error: 'Mật khẩu không chính xác' }, { status: 401 });
     }
 
     const sessionPayload = {
