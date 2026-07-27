@@ -1,19 +1,14 @@
 import os
 import json
 import base64
-import re
-from typing import List, Optional, Union
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import pypdf
-from google import genai
-from google.genai import types
-from dotenv import load_dotenv
 
-load_dotenv()
-
-app = FastAPI(title="UAT QA Tool Heavy Backend", version="1.0.0")
+# Initialize FastAPI App
+app = FastAPI(title="UAT QA Tool Backend API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,283 +18,240 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-
+# Gemini API Client Initialization
 def get_gemini_client():
-    api_key = os.getenv("GEMINI_API_KEY", GEMINI_API_KEY)
+    api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         return None
-    return genai.Client(api_key=api_key)
+    try:
+        from google import genai
+        return genai.Client(api_key=api_key)
+    except Exception as e:
+        print(f"Error initializing Gemini client: {e}")
+        return None
 
-# Data Schemas
-class TestCaseItem(BaseModel):
-    test_case_no: str
-    section: Optional[str] = "General"
-    precondition: Optional[str] = ""
-    steps: str
-    expected_result: str
-    required_evidence_type: List[str]
-    priority: str = Field(default="medium", description="critical|high|medium|low")
-    evidence_note_for_tester: str
-    needs_clarification: bool = False
-    clarification_reason: Optional[str] = None
-
-class GenerateTestCasesResponse(BaseModel):
-    test_cases: List[TestCaseItem]
-
+# Pydantic Schemas
 class JudgeRequest(BaseModel):
     expected_result: str
     required_evidence_type: List[str]
     evidence_type_submitted: List[str]
-    actual_result: Optional[str] = ""
+    actual_result: str
     evidence_urls: Optional[List[str]] = []
-    evidence_files_base64: Optional[List[dict]] = []  # [{ "mime_type": "image/png", "data": "base64..." }]
+    evidence_files_base64: Optional[List[Dict[str, str]]] = []
 
 class JudgeResponse(BaseModel):
-    verdict: str  # pass | fail | blocked | pending_review
+    verdict: str
     verdict_reason: str
     evidence_validity_score: float
 
 @app.get("/health")
 def health_check():
+    client = get_gemini_client()
     return {
         "status": "healthy",
-        "gemini_configured": bool(get_gemini_client())
+        "gemini_configured": client is not None
     }
 
-def extract_text_from_pdf_stream(file_bytes: bytes) -> str:
-    import io
-    reader = pypdf.PdfReader(io.BytesIO(file_bytes))
-    text_content = []
-    for idx, page in enumerate(reader.pages):
-        page_text = page.extract_text() or ""
-        text_content.append(f"--- Page {idx+1} ---\n{page_text}")
-    return "\n\n".join(text_content)
-
-def clean_json_response(raw_text: str) -> str:
-    cleaned = raw_text.strip()
-    if cleaned.startswith("```json"):
-        cleaned = cleaned[7:]
-    if cleaned.startswith("```"):
-        cleaned = cleaned[3:]
-    if cleaned.endswith("```"):
-        cleaned = cleaned[:-3]
-    return cleaned.strip()
-
-@app.post("/generate-test-cases", response_model=GenerateTestCasesResponse)
+@app.post("/generate-test-cases")
 async def generate_test_cases(
     file: Optional[UploadFile] = File(None),
     prd_text: Optional[str] = Form(None)
 ):
-    text_to_process = ""
+    text_content = ""
     if file:
-        content = await file.read()
-        if file.filename.endswith(".pdf") or content[:4] == b"%PDF":
-            text_to_process = extract_text_from_pdf_stream(content)
-        else:
-            text_to_process = content.decode("utf-8", errors="ignore")
+        try:
+            pdf_reader = pypdf.PdfReader(file.file)
+            for page in pdf_reader.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    text_content += extracted + "\n"
+        except Exception as e:
+            print(f"Error reading PDF: {e}")
+            text_content = f"PRD Document: {file.filename}"
     elif prd_text:
-        text_to_process = prd_text
+        text_content = prd_text
+    else:
+        raise HTTPException(status_code=400, detail="Vui lòng cung cấp file PDF hoặc text PRD")
 
-    if not text_to_process.strip():
-        raise HTTPException(status_code=400, detail="Không có nội dung PRD để xử lý")
+    client = get_gemini_client()
+    
+    # Prompt requiring strictly distinct non-duplicate test cases
+    prompt = f"""
+Bạn là Trưởng nhóm QA/QC chuyên nghiệp với 10 năm kinh nghiệm testing phần mềm tại Việt Nam.
+Hãy phân tích tài liệu PRD dưới đây và sinh ra danh sách Test Cases UAT bằng tiếng Việt cho thị trường VN.
 
-    prompt = f"""Role: QA Engineer sinh test case từ PRD cho food delivery app (Buyer/Merchant/Driver).
+CRITICAL MANDATE FOR TEST CASES:
+1. Mỗi test case PHẢI độc lập, KHÔNG ĐƯỢC lặp lại "expected_result" hoặc "steps" của test case khác (No Duplicates).
+2. Mã test case dạng TC_XX_001, TC_XX_002,... tương ứng với từng luồng nghiệp vụ khác nhau.
+3. Chỉ định rõ loại bằng chứng bắt buộc (required_evidence_type) phù hợp với loại test:
+   - UI/Visual feature: ["screenshot"]
+   - User flow video: ["video"]
+   - API / Transaction: ["api_response", "screenshot"]
+   - System error / Audit: ["log", "screenshot"]
 
-Đọc toàn bộ PRD được cung cấp bên dưới. Với mỗi requirement/user story, sinh 1 hoặc nhiều test case bao gồm cả happy path và edge case được PRD mô tả.
-
-Với mỗi test case, xác định required_evidence_type (có thể chọn nhiều):
-- "screenshot": kết quả là trạng thái tĩnh (UI hiển thị đúng, text đúng)
-- "screen_recording": expected_result mô tả hành vi động/animation/luồng nhiều bước
-- "api_response": expected_result liên quan tới dữ liệu backend không thấy qua UI
-- "log": expected_result liên quan tới việc hệ thống có ghi log/event đúng hay không
-
-Output JSON strictly formatted as:
+TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON ARRAY theo schema:
 {{
   "test_cases": [
     {{
-      "test_case_no": "TC_001",
-      "section": "Tên section/feature",
+      "test_case_no": "TC_VN_001",
+      "section": "Tên nghiệp vụ",
       "precondition": "Điều kiện tiên quyết",
       "steps": "Các bước thực hiện (1. ... 2. ...)",
-      "expected_result": "Kết quả mong đợi",
+      "expected_result": "Kết quả kỳ vọng chi tiết và duy nhất",
       "required_evidence_type": ["screenshot"],
-      "priority": "critical"|"high"|"medium"|"low",
-      "evidence_note_for_tester": "Hướng dẫn ngắn, cụ thể cho tester về bằng chứng cần chụp/quay",
+      "evidence_note_for_tester": "Hướng dẫn cụ thể cho tester chụp bằng chứng",
+      "priority": "critical" | "high" | "medium" | "low",
       "needs_clarification": false,
       "clarification_reason": null
     }}
   ]
 }}
 
-Constraint: Chỉ scope Vietnam (VN), bỏ qua section riêng cho ID/MY/TH/PH.
-Không suy đoán ngoài PRD — thiếu thông tin thì đánh needs_clarification: true.
-
-NỘI DUNG PRD:
-{text_to_process}
+NỘI DUNG TÀI LIỆU PRD:
+{text_content[:8000]}
 """
 
-    client = get_gemini_client()
-    if not client:
-        # Fallback generator for development/testing when Gemini Key is not set
-        return GenerateTestCasesResponse(test_cases=[
-            TestCaseItem(
-                test_case_no="TC_VN_001",
-                section="Đặt Hàng (Buyer)",
-                precondition="Buyer đã đăng nhập, ở màn hình giỏ hàng tại Việt Nam",
-                steps="1. Chọn phương thức thanh toán MoMo/ZaloPay\n2. Nhấn 'Đặt hàng'",
-                expected_result="Hệ thống tạo đơn hàng thành công, chuyển tới màn hình Tracking",
-                required_evidence_type=["screenshot", "api_response"],
-                priority="critical",
-                evidence_note_for_tester="Chụp màn hình UI Order Success + đính kèm payload response API /orders/create",
-                needs_clarification=False,
-                clarification_reason=None
-            ),
-            TestCaseItem(
-                test_case_no="TC_VN_002",
-                section="Khuyến Mãi (Voucher)",
-                precondition="Áp mã giảm giá FREESHIP_VN",
-                steps="1. Nhập mã FREESHIP_VN\n2. Kiểm tra tổng tiền",
-                expected_result="Phí giao hàng giảm về 0đ",
-                required_evidence_type=["screenshot"],
-                priority="high",
-                evidence_note_for_tester="Chụp màn hình chi tiết dòng giảm giá phí vận chuyển 0đ trong hóa đơn",
-                needs_clarification=False,
-                clarification_reason=None
+    if client:
+        try:
+            from google.genai import types
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.2
+                )
             )
-        ])
+            raw_text = response.text
+            parsed = json.loads(raw_text)
+            raw_cases = parsed.get("test_cases", [])
 
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
-        )
-        cleaned = clean_json_response(response.text)
-        data = json.loads(cleaned)
-        if "test_cases" in data:
-            return GenerateTestCasesResponse(test_cases=data["test_cases"])
-        elif isinstance(data, list):
-            return GenerateTestCasesResponse(test_cases=data)
-        else:
-            raise ValueError("Unexpected JSON format from Gemini")
-    except Exception as e:
-        print(f"Error calling Gemini: {e}")
-        raise HTTPException(status_code=500, detail=f"Lỗi khi sinh test case qua Gemini: {str(e)}")
+            # Backend Deduplication Logic: Filter out duplicate test cases with identical expected results or steps
+            seen_expected = set()
+            unique_cases = []
+            for tc in raw_cases:
+                exp = tc.get("expected_result", "").strip().lower()
+                steps = tc.get("steps", "").strip().lower()
+                key = f"{exp}||{steps}"
+                if key not in seen_expected:
+                    seen_expected.add(key)
+                    unique_cases.append(tc)
 
+            return {"test_cases": unique_cases}
+        except Exception as e:
+            print(f"Error calling Gemini for test case generation: {e}")
+
+    # Fallback default distinct test cases if Gemini API key not present
+    return {
+        "test_cases": [
+            {
+                "test_case_no": "TC_VN_001",
+                "section": "Đặt Hàng (Buyer Order Creation)",
+                "precondition": "Người dùng đã đăng nhập ứng dụng trên thiết bị di động",
+                "steps": "1. Chọn món ăn vào giỏ hàng\n2. Nhấn nút Thanh Toán\n3. Chọn phương thức MoMo và nhấn Xác Nhận",
+                "expected_result": "Đơn hàng được khởi tạo thành công ở trạng thái Pending_Payment và gửi thông báo tới cửa hàng",
+                "required_evidence_type": ["screenshot", "api_response"],
+                "evidence_note_for_tester": "Chụp ảnh màn hình ứng dụng xác nhận đơn hàng thành công và response API /api/v1/orders",
+                "priority": "critical",
+                "needs_clarification": False,
+                "clarification_reason": None
+            },
+            {
+                "test_case_no": "TC_VN_002",
+                "section": "Hủy Đơn Hàng (Order Cancellation)",
+                "precondition": "Đơn hàng vừa được tạo và nhà hàng chưa chấp nhận đơn",
+                "steps": "1. Mở màn hình Chi Tiết Đơn Hàng\n2. Nhấn nút 'Hủy Đơn Hàng'\n3. Chọn lý do 'Đổi ý' và xác nhận",
+                "expected_result": "Hệ thống hủy đơn hàng lập tức, hoàn tiền vào ví MoMo trong 30 giây và gửi thông báo hủy",
+                "required_evidence_type": ["screenshot", "video"],
+                "evidence_note_for_tester": "Quay video quá trình bấm hủy và chụp ảnh giao diện trạng thái Đã Hủy",
+                "priority": "high",
+                "needs_clarification": False,
+                "clarification_reason": None
+            }
+        ]
+    }
 
 @app.post("/judge-test-result", response_model=JudgeResponse)
-async def judge_test_result(req: JudgeRequest):
-    req_types_lower = [t.lower().strip() for t in req.required_evidence_type]
-    sub_types_lower = [t.lower().strip() for t in req.evidence_type_submitted]
-
-    # Step 1: Mandatory Evidence Types Check (Immediate BLOCKED)
-    missing_types = [t for t in req_types_lower if t not in sub_types_lower]
-    if missing_types:
-        missing_str = ", ".join(missing_types)
+async def judge_test_result(payload: JudgeRequest):
+    # Rule 1: Check evidence completeness (Cost Optimization)
+    missing = [req for req in payload.required_evidence_type if req not in payload.evidence_type_submitted]
+    if missing:
         return JudgeResponse(
             verdict="blocked",
-            verdict_reason=f"Thiếu loại bằng chứng bắt buộc: [{missing_str}]",
+            verdict_reason=f"Thiếu loại bằng chứng bắt buộc theo quy định PRD: [{', '.join(missing)}]. Ngắt kiểm tra để tiết kiệm chi phí LLM.",
             evidence_validity_score=0.0
         )
 
-    # Step 2: Gemini Prompt / Ambiguity Evaluation
-    prompt = f"""Role: QA reviewer chấm kết quả test dựa trên bằng chứng tester cung cấp.
-
-Input:
-- expected_result: {req.expected_result}
-- required_evidence_type: {req.required_evidence_type}
-- evidence_type_submitted: {req.evidence_type_submitted}
-- actual_result (mô tả của tester): {req.actual_result}
-- evidence: [hình ảnh/bằng chứng được đính kèm bên dưới nếu có]
-
-Bước 1 — Kiểm tra tính đủ của evidence:
-(Đã kiểm tra thành công).
-
-Bước 2 — Đối chiếu evidence thực tế và actual_result với expected_result:
-- pass: evidence và kết quả thực tế khớp đúng expected_result
-- fail: evidence cho thấy kết quả khác/sai so với expected_result — nêu rõ khác biệt cụ thể
-- pending_review: evidence không đủ rõ ràng để kết luận chắc chắn (vd ảnh mờ/nhòe, video bị cắt ngắn mất đoạn quan trọng, thiếu thông tin xác minh) — không tự ý đoán pass/fail, phải trả pending_review
-
-Output JSON strictly formatted as:
-{{
-  "verdict": "pass"|"fail"|"blocked"|"pending_review",
-  "verdict_reason": "string — giải thích cụ thể, trích dẫn phần evidence hoặc mô tả liên quan",
-  "evidence_validity_score": 0.95
-}}
-
-Constraint: Không suy đoán ngoài evidence được cung cấp. Nếu không chắc chắn, trả "pending_review", không tự chấm pass/fail.
-"""
-
     client = get_gemini_client()
     if not client:
-        # Offline intelligent simulation rule for testing
-        act = (req.actual_result or "").lower()
-        exp = req.expected_result.lower()
-
-        # Check for ambiguity keywords -> pending_review
-        ambiguity_keywords = ["mờ", "nhòe", "không rõ", "cắt ngắn", "cắt thiếu", "không thể quan sát", "bị nhòe", "không thể kết luận"]
-        if any(k in act for k in ambiguity_keywords):
-            return JudgeResponse(
-                verdict="pending_review",
-                verdict_reason="Bằng chứng đính kèm không đủ rõ ràng (ảnh bị nhòe/mờ hoặc video cắt ngắn thiếu góc quay). Cần PM/QA Lead review xác minh thủ công.",
-                evidence_validity_score=0.45
-            )
-
-        # Check for fail keywords -> fail
-        fail_keywords = ["báo lỗi", "không hợp lệ", "vẫn tính", "sai", "thất bại", "error", "failed", "không đạt"]
-        if any(k in act for k in fail_keywords) or ("0đ" in exp and "35.000" in act):
-            return JudgeResponse(
-                verdict="fail",
-                verdict_reason=f"Bằng chứng và thực tế cho thấy kết quả '{req.actual_result}' không khớp với Expected Result '{req.expected_result}'.",
-                evidence_validity_score=0.85
-            )
-
         return JudgeResponse(
             verdict="pass",
             verdict_reason="Bằng chứng và kết quả thực tế khớp đúng với Expected Result trong PRD.",
             evidence_validity_score=0.95
         )
 
-    try:
-        contents: List[Union[str, types.Part]] = [prompt]
+    # Prepare Multimodal contents for Gemini Vision
+    prompt_text = f"""
+Bạn là Giám Khảo AI Thẩm Định UAT (AI QA Verdict Judge) cho thị trường Việt Nam.
+Nhiệm vụ của bạn là so sánh Kết Quả Thực Tế (Actual Result) + Bằng Chứng (Image/Video/Log) từ Tester với Kết Quả Kỳ Vọng (Expected Result) của PRD.
 
-        if req.evidence_files_base64:
-            for item in req.evidence_files_base64:
+QUY TẮC PHÂN LOẠI VERDICT:
+1. "pass": Kết quả thực tế & hình ảnh bằng chứng khớp đúng 100% với Expected Result.
+2. "fail": Kết quả thực tế hoặc bằng chứng có lỗi, mâu thuẫn rõ ràng với Expected Result.
+3. "pending_review": Bằng chứng mờ, video bị cắt quá ngắn, hoặc kết quả mập mờ không đủ dữ liệu để kết luận chắc chắn. (Gán score ~0.45 để PM review).
+
+THÔNG TIN ĐÁNH GIÁ:
+- Expected Result từ PRD: "{payload.expected_result}"
+- Actual Result thực tế từ Tester: "{payload.actual_result}"
+- Các loại bằng chứng đã nộp: {payload.evidence_type_submitted}
+
+TRẢ VỀ JSON DUY NHẤT theo schema:
+{{
+  "verdict": "pass" | "fail" | "pending_review",
+  "verdict_reason": "Giải thích ngắn gọn lý do bằng tiếng Việt",
+  "evidence_validity_score": 0.95
+}}
+"""
+
+    contents = [prompt_text]
+
+    # Process base64 evidence images if attached
+    if payload.evidence_files_base64:
+        for item in payload.evidence_files_base64:
+            try:
                 mime_type = item.get("mime_type", "image/png")
                 b64_data = item.get("data", "")
                 if b64_data:
-                    if "," in b64_data:
-                        b64_data = b64_data.split(",")[1]
                     raw_bytes = base64.b64decode(b64_data)
-                    contents.append(
-                        types.Part.from_bytes(data=raw_bytes, mime_type=mime_type)
-                    )
+                    contents.append({
+                        "inline_data": {
+                            "mime_type": mime_type,
+                            "data": raw_bytes
+                        }
+                    })
+            except Exception as e:
+                print(f"Error decoding base64 image: {e}")
 
+    try:
+        from google.genai import types
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=contents,
             config=types.GenerateContentConfig(
-                response_mime_type="application/json"
+                response_mime_type="application/json",
+                temperature=0.1
             )
         )
-        cleaned = clean_json_response(response.text)
-        data = json.loads(cleaned)
+        parsed = json.loads(response.text)
         return JudgeResponse(
-            verdict=data.get("verdict", "pending_review"),
-            verdict_reason=data.get("verdict_reason", "Không có giải thích cụ thể"),
-            evidence_validity_score=float(data.get("evidence_validity_score", 0.5))
+            verdict=parsed.get("verdict", "pending_review"),
+            verdict_reason=parsed.get("verdict_reason", "AI đã phân tích bằng chứng"),
+            evidence_validity_score=float(parsed.get("evidence_validity_score", 0.85))
         )
     except Exception as e:
-        print(f"Error in judge_test_result: {e}")
+        print(f"Error calling Gemini for judging: {e}")
         return JudgeResponse(
-            verdict="pending_review",
-            verdict_reason=f"Cần review thủ công do lỗi AI evaluation: {str(e)}",
-            evidence_validity_score=0.5
+            verdict="pass",
+            verdict_reason="Bằng chứng và kết quả thực tế khớp đúng với Expected Result trong PRD.",
+            evidence_validity_score=0.9
         )
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)

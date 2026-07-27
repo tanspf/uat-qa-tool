@@ -5,7 +5,7 @@ create table if not exists prds (
   id uuid primary key default gen_random_uuid(),
   file_name text not null,
   file_url text not null,
-  uploaded_by uuid,
+  uploaded_by text default 'PM/BA User',
   created_at timestamptz default now()
 );
 
@@ -26,11 +26,12 @@ create table if not exists test_cases (
   created_at timestamptz default now()
 );
 
--- 3. Table for Test Results
+-- 3. Table for Test Results (Audit log for Submitter & Timestamp)
 create table if not exists test_results (
   id uuid primary key default gen_random_uuid(),
   test_case_id uuid references test_cases(id) on delete cascade,
-  tester_id uuid,
+  tester_id text default 'tester_anonymous',
+  tester_name text default 'UAT Tester',
   actual_result text,
   evidence_urls text[],
   evidence_type_submitted text[],

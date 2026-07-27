@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { PRD, TestCase } from '@/lib/types';
+import { PRD, TestCase, FILE_CONSTRAINTS } from '@/lib/types';
 import { uploadFileToStorage } from '@/lib/supabaseStorage';
 import crypto from 'crypto';
 
@@ -27,11 +27,26 @@ export async function POST(req: NextRequest) {
     let fileBuffer: Buffer | null = null;
 
     if (file) {
+      // Enforce File Size Constraints for PRD (20MB)
+      const sizeMb = file.size / (1024 * 1024);
+      if (sizeMb > FILE_CONSTRAINTS.MAX_PRD_SIZE_MB) {
+        return NextResponse.json({
+          error: `Dung lượng file PRD vượt quá giới hạn tối đa (${FILE_CONSTRAINTS.MAX_PRD_SIZE_MB}MB)`
+        }, { status: 400 });
+      }
+
+      const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+      if (!FILE_CONSTRAINTS.ALLOWED_PRD_EXTENSIONS.includes(ext)) {
+        return NextResponse.json({
+          error: `Định dạng file ${ext} không được hỗ trợ. Vui lòng tải file PDF hoặc TXT.`
+        }, { status: 400 });
+      }
+
       fileName = file.name;
       const arrayBuffer = await file.arrayBuffer();
       fileBuffer = Buffer.from(arrayBuffer);
 
-      // Upload file to Supabase Storage (or Data URL fallback in-memory) - NO DISK WRITE (fs)
+      // Upload file to Supabase Storage (or Data URL fallback in-memory) - NO DISK WRITE
       fileUrl = await uploadFileToStorage(
         fileBuffer,
         fileName,
@@ -54,7 +69,6 @@ export async function POST(req: NextRequest) {
     try {
       const fastApiFormData = new FormData();
       if (file && fileBuffer) {
-        // Convert Buffer to Uint8Array for standard BlobPart compatibility
         const blob = new Blob([new Uint8Array(fileBuffer)], { type: file.type || 'application/pdf' });
         fastApiFormData.append('file', blob, fileName);
       }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { TestResult, EvidenceType } from '@/lib/types';
+import { TestResult, EvidenceType, FILE_CONSTRAINTS } from '@/lib/types';
 import { uploadFileToStorage } from '@/lib/supabaseStorage';
 import crypto from 'crypto';
 
@@ -23,6 +23,8 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
     const testCaseId = formData.get('test_case_id') as string;
     const actualResult = formData.get('actual_result') as string || '';
+    const testerName = (formData.get('tester_name') as string) || 'Tester UAT';
+    const testerId = (formData.get('tester_id') as string) || 'tester_default';
     const evidenceTypesSubmittedStr = formData.get('evidence_type_submitted') as string || '[]';
     let evidenceTypesSubmitted: EvidenceType[] = [];
 
@@ -38,14 +40,37 @@ export async function POST(req: NextRequest) {
     }
 
     const evidenceFiles = formData.getAll('evidence_files') as (File | string)[];
+
+    // File Upload Constraints Enforcement
+    if (evidenceFiles.length > FILE_CONSTRAINTS.MAX_EVIDENCE_FILES_COUNT) {
+      return NextResponse.json({
+        error: `Vượt quá số lượng bằng chứng tối đa (${FILE_CONSTRAINTS.MAX_EVIDENCE_FILES_COUNT} file)`
+      }, { status: 400 });
+    }
+
     const savedEvidenceUrls: string[] = [];
     const base64FilesForAi: { mime_type: string; data: string }[] = [];
 
     for (const f of evidenceFiles) {
       if (typeof f === 'object' && f.name) {
+        // Enforce File Size Limit (15MB)
+        const sizeMb = f.size / (1024 * 1024);
+        if (sizeMb > FILE_CONSTRAINTS.MAX_EVIDENCE_SIZE_MB) {
+          return NextResponse.json({
+            error: `File ${f.name} vượt quá dung lượng cho phép (${FILE_CONSTRAINTS.MAX_EVIDENCE_SIZE_MB}MB)`
+          }, { status: 400 });
+        }
+
+        const ext = f.name.slice(f.name.lastIndexOf('.')).toLowerCase();
+        if (!FILE_CONSTRAINTS.ALLOWED_EVIDENCE_EXTENSIONS.includes(ext)) {
+          return NextResponse.json({
+            error: `Định dạng file ${ext} không được hỗ trợ cho bằng chứng test`
+          }, { status: 400 });
+        }
+
         const buffer = Buffer.from(await f.arrayBuffer());
 
-        // Upload evidence file to Supabase Storage (or Data URL fallback in-memory) - NO DISK WRITE (fs)
+        // Upload evidence file to Supabase Storage (or Data URL fallback in-memory) - NO DISK WRITE
         const publicUrl = await uploadFileToStorage(
           buffer,
           f.name,
@@ -110,20 +135,26 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const nowIso = new Date().toISOString();
+
     const newResult: TestResult = {
       id: crypto.randomUUID(),
       test_case_id: testCaseId,
+      tester_id: testerId,
+      tester_name: testerName,
       actual_result: actualResult,
       evidence_urls: savedEvidenceUrls,
       evidence_type_submitted: evidenceTypesSubmitted,
       verdict: verdict as any,
       verdict_reason: verdictReason,
       evidence_validity_score: evidenceValidityScore,
-      reviewed_at: new Date().toISOString(),
-      created_at: new Date().toISOString(),
+      reviewed_at: nowIso,
+      created_at: nowIso,
     };
 
     await db.addTestResult(newResult);
+
+    console.log(`[AUDIT LOG] Test Result Submitted | Submitter: ${testerName} (${testerId}) | Time: ${nowIso} | Verdict: ${verdict}`);
 
     return NextResponse.json(newResult);
   } catch (err: any) {
