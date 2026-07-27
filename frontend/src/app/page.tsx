@@ -12,6 +12,7 @@ import { CaseDetailsModal } from '@/components/CaseDetailsModal';
 import { DashboardView } from '@/components/DashboardView';
 import { AuditLogsModal } from '@/components/AuditLogsModal';
 import { GrantUserModal } from '@/components/GrantUserModal';
+import { ChangePasswordModal } from '@/components/ChangePasswordModal';
 import { Sparkles, FileText, CheckCircle2, ShieldCheck, ArrowRight, Loader2, Lock } from 'lucide-react';
 
 function AppContent() {
@@ -24,6 +25,7 @@ function AppContent() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isAuditLogsOpen, setIsAuditLogsOpen] = useState(false);
   const [isGrantUserOpen, setIsGrantUserOpen] = useState(false);
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [executingCase, setExecutingCase] = useState<TestCase | null>(null);
   const [detailCase, setDetailCase] = useState<TestCase | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -104,6 +106,7 @@ function AppContent() {
         onOpenUpload={() => setIsUploadOpen(true)}
         onOpenAuditLogs={() => setIsAuditLogsOpen(true)}
         onOpenGrantUser={() => setIsGrantUserOpen(true)}
+        onChangePassword={() => setIsChangePasswordOpen(true)}
         activeTab={activeTab}
         onChangeTab={setActiveTab}
       />
@@ -230,6 +233,11 @@ function AppContent() {
       <AuditLogsModal
         isOpen={isAuditLogsOpen}
         onClose={() => setIsAuditLogsOpen(false)}
+      />
+
+      <ChangePasswordModal
+        isOpen={isChangePasswordOpen}
+        onClose={() => setIsChangePasswordOpen(false)}
       />
 
       {executingCase && (

@@ -127,6 +127,25 @@ export const db = {
     return user;
   },
 
+  async updateUserPassword(email: string, newPassword_hash: string): Promise<boolean> {
+    const lowerEmail = email.toLowerCase().trim();
+    if (isSupabaseConfigured() && supabase) {
+      const { error } = await supabase
+        .from('users')
+        .update({ password_hash: newPassword_hash })
+        .eq('email', lowerEmail);
+      if (error) console.error('Supabase error updating password:', error);
+    }
+    const store = ensureStoreExists();
+    const user = store.users.find(u => u.email.toLowerCase() === lowerEmail);
+    if (user) {
+      user.password = newPassword_hash;
+      saveStore(store);
+      return true;
+    }
+    return false;
+  },
+
   // PRDs (Tasks) with RBAC filtering
   async getAllPrds(user?: User | null): Promise<PRD[]> {
     let allPrds: PRD[] = [];

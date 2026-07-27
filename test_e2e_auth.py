@@ -135,8 +135,32 @@ def test_full_auth_and_rbac_flow():
     assert found, "Submitted record must be present in backend audit logs!"
     print("[OK] PASSED: Backend record contains exact submitter identity (tester1@foody.vn) and timestamp!")
 
+    # 10. TEST PASSWORD CHANGE FOR TESTER 1
+    print("\n[TEST 10] Testing Password Change for tester1@foody.vn...")
+    change_res = t1_session.post(f"{BASE_URL}/api/auth/change-password", json={
+        "oldPassword": "password123",
+        "newPassword": "newpassword456"
+    })
+    assert change_res.status_code == 200, f"Password change failed: {change_res.text}"
+    print("[OK] Password changed successfully to newpassword456")
+
+    # Verify login with new password
+    t1_new_session = requests.Session()
+    res_new = t1_new_session.post(f"{BASE_URL}/api/auth/login", json={
+        "email": "tester1@foody.vn",
+        "password": "newpassword456"
+    })
+    assert res_new.status_code == 200, "Login with new password should succeed"
+    print("[OK] PASSED: Logged in successfully with new password!")
+
+    # Reset password back to password123 for consistency
+    t1_new_session.post(f"{BASE_URL}/api/auth/change-password", json={
+        "oldPassword": "newpassword456",
+        "newPassword": "password123"
+    })
+
     print("\n==================================================")
-    print("ALL 9 FOODY.VN AUTH & RBAC VERIFICATION TESTS PASSED CLEANLY!")
+    print("ALL 10 FOODY.VN AUTH, RBAC & PASSWORD CHANGE TESTS PASSED CLEANLY!")
     print("==================================================")
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@
 import React from 'react';
 import { PRD } from '@/lib/types';
 import { useAuth } from '@/lib/AuthContext';
-import { ShieldCheck, Sparkles, LayoutDashboard, CheckSquare, LogOut, User as UserIcon, Shield, Database, UserPlus } from 'lucide-react';
+import { ShieldCheck, Sparkles, LayoutDashboard, CheckSquare, LogOut, User as UserIcon, Shield, Database, UserPlus, KeyRound } from 'lucide-react';
 
 interface NavbarProps {
   prds: PRD[];
@@ -12,6 +12,7 @@ interface NavbarProps {
   onOpenUpload: () => void;
   onOpenAuditLogs: () => void;
   onOpenGrantUser?: () => void;
+  onChangePassword?: () => void;
   activeTab: 'matrix' | 'dashboard';
   onChangeTab: (tab: 'matrix' | 'dashboard') => void;
 }
@@ -23,6 +24,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenUpload,
   onOpenAuditLogs,
   onOpenGrantUser,
+  onChangePassword,
   activeTab,
   onChangeTab,
 }) => {
@@ -137,7 +139,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
 
-          {/* User Profile Badge & Logout */}
+          {/* User Profile Badge, Password Change & Logout */}
           {user && (
             <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl text-xs">
               <div className={`p-1 rounded-md ${user.role === 'pm' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
@@ -149,12 +151,21 @@ export const Navbar: React.FC<NavbarProps> = ({
                   {user.role === 'pm' ? '👑 PM / Admin' : '🧪 Tester / PIC'}
                 </span>
               </div>
+              {onChangePassword && (
+                <button
+                  onClick={onChangePassword}
+                  title="Đổi mật khẩu tài khoản"
+                  className="ml-1 p-1 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                </button>
+              )}
               <button
                 onClick={logout}
                 title="Đăng xuất"
-                className="ml-1 p-1 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition"
+                className="p-1 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-3.5 h-3.5" />
               </button>
             </div>
           )}
