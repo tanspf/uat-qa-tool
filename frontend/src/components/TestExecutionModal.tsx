@@ -106,9 +106,19 @@ export function TestExecutionModal({
         body: formData,
       });
 
+      const responseText = await res.text();
+      let errJson: any = {};
+      try {
+        errJson = JSON.parse(responseText);
+      } catch {
+        if (res.status === 413 || responseText.includes('Request Entity') || responseText.includes('Payload Too Large')) {
+          throw new Error('Dung lượng tệp bằng chứng đính kèm quá lớn (Request Entity Too Large). Vui lòng chọn ảnh/video dung lượng nhỏ hơn.');
+        }
+        throw new Error(`Lỗi máy chủ (HTTP ${res.status}): ${responseText.slice(0, 100)}`);
+      }
+
       if (!res.ok) {
-        const errJson = await res.json();
-        throw new Error(errJson.error || 'Lỗi khi gửi đánh giá');
+        throw new Error(errJson.error || `Lỗi khi gửi đánh giá (HTTP ${res.status})`);
       }
 
       onSubmitted();

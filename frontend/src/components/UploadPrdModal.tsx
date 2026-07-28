@@ -32,6 +32,13 @@ export const UploadPrdModal: React.FC<UploadPrdModalProps> = ({ isOpen, onClose,
       setError('Vui lòng chọn file PDF PRD');
       return;
     }
+    if (inputMode === 'file' && file) {
+      const sizeMb = file.size / (1024 * 1024);
+      if (sizeMb > 4.5) {
+        setError(`Dung lượng file PDF (${sizeMb.toFixed(1)}MB) vượt quá giới hạn 4.5MB của server Vercel. Vui lòng nén file hoặc chuyển sang chế độ "Nhập PRD Text".`);
+        return;
+      }
+    }
     if (inputMode === 'text' && !prdText.trim()) {
       setError('Vui lòng nhập nội dung PRD');
       return;
@@ -59,9 +66,23 @@ export const UploadPrdModal: React.FC<UploadPrdModalProps> = ({ isOpen, onClose,
         body: formData,
       });
 
-      const data = await res.json();
+      const responseText = await res.text();
+      let data: any = {};
+
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        if (res.status === 413 || responseText.includes('Request Entity') || responseText.includes('Payload Too Large')) {
+          throw new Error('Dung lượng file/dữ liệu PRD quá lớn (Request Entity Too Large). Vui lòng dán văn bản PRD hoặc dùng file PDF dưới 4.5MB.');
+        }
+        if (res.status === 504 || responseText.includes('Timeout')) {
+          throw new Error('Thời gian phản hồi vượt quá giới hạn (Gateway Timeout). Vui lòng thử lại với tài liệu ngắn hơn.');
+        }
+        throw new Error(`Lỗi phản hồi máy chủ (HTTP ${res.status}): ${responseText.slice(0, 120)}`);
+      }
+
       if (!res.ok) {
-        throw new Error(data.error || 'Upload PRD thất bại');
+        throw new Error(data.error || `Upload PRD thất bại (HTTP ${res.status})`);
       }
 
       setStatusMessage(`3/3. Hoàn tất! Đã sinh ${data.test_cases_count || 0} test case.`);
